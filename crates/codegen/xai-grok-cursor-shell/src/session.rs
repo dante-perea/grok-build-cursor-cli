@@ -1,4 +1,4 @@
-//! Cursor session — pure multi-pane state machine + Composer submit path.
+//! Cursor session — state machine for Agents Home + active session.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -9,6 +9,7 @@ use crate::chat::ChatTranscript;
 use crate::composer::{ComposerOutcome, ComposerState};
 use crate::diff_review::{ChangeItem, DiffReviewState};
 use crate::layout::{CursorLayout, FocusPane, LayoutSnapshot};
+use crate::layout_home::{AgentsView, HomeLayoutSnapshot};
 use crate::workspace::WorkspacePane;
 
 /// Side effects requested by the session reducer (executed by the app / driver).
@@ -18,6 +19,8 @@ pub enum SessionEffect {
     SubmitToAgent { prompt: String },
     /// Apply accept/reject through the hunk tracker pipeline.
     ApplyHunkAction { hunk_id: String, action: HunkAction },
+    /// Record a sidebar history entry (first prompt of a turn).
+    RecordHistory { title: String },
     /// Quit the interactive shell.
     Quit,
     /// Redraw needed (always implicit; listed for clarity in tests).
@@ -67,10 +70,15 @@ pub enum CursorAction {
     WorkspaceSelectNext,
     WorkspaceSelectPrev,
     WorkspaceOpenSelected,
+    /// Toggle Plan mode chip (Cursor Agents home).
+    SetPlanMode(bool),
+    TogglePlanMode,
+    /// Return to Agents Home empty canvas.
+    NewAgent,
     Quit,
 }
 
-/// Full Cursor-like multi-pane session state.
+/// Full session state (Agents Home + active agent turn).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CursorSession {
     pub layout: CursorLayout,
@@ -81,6 +89,12 @@ pub struct CursorSession {
     pub diffs: DiffReviewState,
     pub status_line: String,
     pub agent_busy: bool,
+    /// Agents Home vs active session transcript.
+    pub view: AgentsView,
+    /// Plan mode chip (prefixes prompt when submitting).
+    pub plan_mode: bool,
+    /// Display model label (static for v1).
+    pub model_label: String,
 }
 
 impl CursorSession {
@@ -88,20 +102,30 @@ impl CursorSession {
         let root = workspace_root.into();
         let mut workspace = WorkspacePane::new(root.clone());
         let _ = workspace.refresh_listing();
+        let mut composer = ComposerState::new();
+        composer.placeholder = "Plan and design before coding…".into();
         Self {
             layout: CursorLayout::default(),
             workspace,
             chat: ChatTranscript::new(),
-            composer: ComposerState::new(),
+            composer,
             activity: ActivityFeed::new(),
             diffs: DiffReviewState::new(),
             status_line: format!("grok-build-cursor-cli · {}", root.display()),
             agent_busy: false,
+            view: AgentsView::Home,
+            plan_mode: true,
+            model_label: "Grok".into(),
         }
     }
 
     pub fn layout_snapshot(&self) -> LayoutSnapshot {
         self.layout.snapshot()
+    }
+
+    /// Cursor Agents Home dump (default product surface).
+    pub fn home_layout_snapshot(&self) -> HomeLayoutSnapshot {
+        HomeLayoutSnapshot::agents_home().with_view(self.view)
     }
 
     /// Reduce one action; returns effects for the app loop / agent driver.
@@ -122,17 +146,43 @@ impl CursorSession {
             CursorAction::ComposerBackspace => {
                 let _ = self.composer.backspace();
             }
+            CursorAction::SetPlanMode(v) => {
+                self.plan_mode = v;
+            }
+            CursorAction::TogglePlanMode => {
+                self.plan_mode = !self.plan_mode;
+            }
+            CursorAction::NewAgent => {
+                self.view = AgentsView::Home;
+                self.chat = ChatTranscript::new();
+                self.activity = ActivityFeed::new();
+                self.diffs = DiffReviewState::new();
+                self.agent_busy = false;
+                self.composer.set_turn_in_flight(false);
+                let _ = self.composer.clear();
+                self.status_line = "New Agent".into();
+            }
             CursorAction::ComposerSubmit => {
                 match self.composer.submit() {
                     ComposerOutcome::Submit { prompt } => {
+                        let title = prompt.clone();
+                        let agent_prompt = if self.plan_mode {
+                            format!("[plan mode] {prompt}")
+                        } else {
+                            prompt.clone()
+                        };
+                        self.view = AgentsView::Session;
                         self.chat.push_user(&prompt);
                         self.activity
-                            .push_status(format!("Submitting to Grok Build agent…"));
+                            .push_status("Submitting to Grok Build agent…");
                         self.chat.begin_assistant_stream();
                         self.agent_busy = true;
                         self.composer.set_turn_in_flight(true);
                         self.status_line = "Agent turn in progress…".into();
-                        effects.push(SessionEffect::SubmitToAgent { prompt });
+                        effects.push(SessionEffect::RecordHistory { title });
+                        effects.push(SessionEffect::SubmitToAgent {
+                            prompt: agent_prompt,
+                        });
                     }
                     _ => {}
                 }
@@ -242,11 +292,14 @@ impl CursorSession {
 mod tests {
     use super::*;
     use crate::agent_bridge::{AgentRuntimeEvent, ToolCallPhase, bind_events};
+    use crate::layout_home::AgentsView;
     use std::env;
 
     #[test]
     fn composer_submit_emits_submit_to_agent_effect() {
         let mut session = CursorSession::new(env::temp_dir());
+        assert_eq!(session.view, AgentsView::Home);
+        session.plan_mode = false;
         session
             .reduce(CursorAction::ComposerInsertStr("refactor auth".into()));
         let effects = session.reduce(CursorAction::ComposerSubmit);
@@ -257,9 +310,39 @@ mod tests {
             )),
             "effects: {effects:?}"
         );
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, SessionEffect::RecordHistory { title } if title == "refactor auth"))
+        );
         assert_eq!(session.chat.messages[0].content, "refactor auth");
         assert!(session.agent_busy);
-        assert!(session.layout_snapshot().is_multi_pane());
+        assert_eq!(session.view, AgentsView::Session);
+        assert!(session.home_layout_snapshot().is_cursor_agents_home());
+    }
+
+    #[test]
+    fn plan_mode_prefixes_agent_prompt() {
+        let mut session = CursorSession::new(env::temp_dir());
+        session.plan_mode = true;
+        session.reduce(CursorAction::ComposerInsertStr("design auth".into()));
+        let effects = session.reduce(CursorAction::ComposerSubmit);
+        assert!(
+            effects.iter().any(|e| matches!(
+                e,
+                SessionEffect::SubmitToAgent { prompt } if prompt.starts_with("[plan mode]")
+            )),
+            "{effects:?}"
+        );
+    }
+
+    #[test]
+    fn new_agent_returns_home() {
+        let mut session = CursorSession::new(env::temp_dir());
+        session.view = AgentsView::Session;
+        session.reduce(CursorAction::NewAgent);
+        assert_eq!(session.view, AgentsView::Home);
+        assert!(session.chat.messages.is_empty());
     }
 
     #[test]

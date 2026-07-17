@@ -1,10 +1,8 @@
-//! Cursor-like multi-pane shell for Grok Build.
+//! Cursor Agents Home shell for Grok Build.
 //!
-//! Pure layout / session state is isolated from terminal I/O so unit tests can
-//! exercise the shipped reducers, Composer submit path, activity binding, and
-//! diff-review model without a full TUI frame loop. The interactive binary
-//! (`grok-build-cursor-cli`) renders the same state with ratatui and drives
-//! the real Grok Build agent runtime via ACP stdio.
+//! Default product surface is a local web UI matching Cursor Agents home
+//! (sidebar + floating Composer). Agent runtime is Grok Build via ACP stdio.
+//! Legacy multipane TUI is available via `--tui`.
 
 pub mod activity;
 pub mod agent_bridge;
@@ -13,8 +11,11 @@ pub mod app;
 pub mod chat;
 pub mod composer;
 pub mod diff_review;
+pub mod history;
 pub mod layout;
+pub mod layout_home;
 pub mod render;
+pub mod server;
 pub mod session;
 pub mod workspace;
 
@@ -28,6 +29,8 @@ pub use app::{AppOptions, run_headless_dump, run_headless_dump_blocking};
 pub use chat::{ChatMessage, ChatRole, ChatTranscript};
 pub use composer::{ComposerOutcome, ComposerState};
 pub use diff_review::{ChangeDecision, ChangeItem, DiffReviewState};
+pub use history::{AgentHistoryStore, SessionMeta};
 pub use layout::{CursorLayout, FocusPane, LayoutSnapshot};
+pub use layout_home::{AgentsView, HomeLayoutSnapshot};
 pub use session::{CursorAction, CursorSession, SessionEffect};
 pub use workspace::{WorkspaceFile, WorkspacePane};

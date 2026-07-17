@@ -93,7 +93,9 @@ async fn apply_effects_headless(
             SessionEffect::ApplyHunkAction { hunk_id, action } => {
                 apply_hunk_effect(session, hunk_id, *action)?;
             }
-            SessionEffect::Quit | SessionEffect::Redraw => {}
+            SessionEffect::RecordHistory { .. }
+            | SessionEffect::Quit
+            | SessionEffect::Redraw => {}
         }
     }
     Ok(())
@@ -327,7 +329,9 @@ async fn dispatch_effects(
             SessionEffect::ApplyHunkAction { hunk_id, action } => {
                 apply_hunk_effect(session, hunk_id, *action)?;
             }
-            SessionEffect::Quit | SessionEffect::Redraw => {}
+            SessionEffect::RecordHistory { .. }
+            | SessionEffect::Quit
+            | SessionEffect::Redraw => {}
         }
     }
     Ok(())

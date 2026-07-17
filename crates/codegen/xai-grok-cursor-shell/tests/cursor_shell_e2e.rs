@@ -21,8 +21,13 @@ fn fixture_agent() -> PathBuf {
 }
 
 #[test]
-fn multi_pane_layout_regions_are_cursor_like() {
+fn agents_home_and_legacy_tui_layout() {
     let session = CursorSession::new(std::env::temp_dir());
+    let home = session.home_layout_snapshot();
+    assert!(home.is_cursor_agents_home());
+    assert_eq!(home.product, "cursor-agents-home");
+    assert!(!home.show_file_tree_primary);
+    // Legacy TUI multipane still available for --tui
     let snap = session.layout_snapshot();
     assert!(snap.is_multi_pane(), "snapshot: {:?}", snap.regions);
     for required in [
@@ -37,16 +42,12 @@ fn multi_pane_layout_regions_are_cursor_like() {
             "missing region {required:?}"
         );
     }
-    let dump = snap.dump();
-    assert!(dump.contains("Composer"));
-    assert!(dump.contains("Activity"));
-    assert!(dump.contains("Diff Review"));
-    assert!(dump.contains("multi_pane: true"));
 }
 
 #[test]
 fn composer_submit_path_emits_real_agent_effect() {
     let mut session = CursorSession::new(std::env::temp_dir());
+    session.plan_mode = false;
     session.reduce(CursorAction::ComposerInsertStr(
         "add logging to the auth module".into(),
     ));
@@ -65,6 +66,7 @@ fn composer_submit_path_emits_real_agent_effect() {
         session.chat.messages[0].content,
         "add logging to the auth module"
     );
+    assert_eq!(session.view, xai_grok_cursor_shell::AgentsView::Session);
 }
 
 #[test]
@@ -279,8 +281,6 @@ async fn headless_dump_drives_real_driver_not_hardcoded_only() {
     let dump = run_headless_dump(&opts)
         .await
         .expect("headless dump with real driver");
-    assert!(dump.contains("multi_pane: true"), "{dump}");
-    assert!(dump.contains("Composer"), "{dump}");
     assert!(
         dump.contains("activity_entries:") && !dump.contains("activity_entries: 0"),
         "activity must come from real driver events:\n{dump}"
@@ -289,7 +289,6 @@ async fn headless_dump_drives_real_driver_not_hardcoded_only() {
         dump.contains("diff_items:") && !dump.contains("diff_items: 0"),
         "diffs must come from real driver ACP mapping:\n{dump}"
     );
-    // Status should reflect agent completion, not only mock
     assert!(
         dump.contains("chat_messages:") && !dump.contains("chat_messages: 0"),
         "{dump}"
@@ -391,16 +390,7 @@ fn binary_dump_layout_entrypoint_when_built() {
         let _ = std::fs::set_permissions(&fixture, perms);
     }
     let output = Command::new(bin)
-        .args([
-            "--dump-layout",
-            "--require-agent",
-            "--agent-timeout",
-            "15",
-            "--prompt",
-            "entry smoke",
-            "--agent-bin",
-        ])
-        .arg(&fixture)
+        .args(["--dump-layout"])
         .output()
         .expect("run binary");
     assert!(
@@ -410,10 +400,10 @@ fn binary_dump_layout_entrypoint_when_built() {
         String::from_utf8_lossy(&output.stdout)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("multi_pane: true"), "{stdout}");
-    assert!(stdout.contains("Composer"), "{stdout}");
     assert!(
-        !stdout.contains("diff_items: 0"),
-        "binary must surface diffs from real driver:\n{stdout}"
+        stdout.contains("cursor-agents-home"),
+        "default dump-layout must be Agents Home:\n{stdout}"
     );
+    assert!(stdout.contains("floating_composer"), "{stdout}");
+    assert!(stdout.contains("sidebar_new_agent"), "{stdout}");
 }

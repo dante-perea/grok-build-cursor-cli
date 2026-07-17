@@ -80,25 +80,28 @@ cargo run -p xai-grok-pager-bin              # build + launch the stock TUI
 cargo build -p xai-grok-pager-bin --release  # release binary: target/release/xai-grok-pager
 cargo check -p xai-grok-pager-bin            # fast validation
 
-# Cursor-like multi-pane shell (this fork)
-cargo run -p xai-grok-cursor-shell           # interactive Workspace | Chat/Composer | Activity | Diff Review
-cargo run -p xai-grok-cursor-shell -- --dump-layout --prompt "smoke"
+# Cursor Agents Home (this fork) — browser UI matching Cursor Agents
+cargo run -p xai-grok-cursor-shell -- --port 9876   # opens http://127.0.0.1:9876
+cargo run -p xai-grok-cursor-shell -- --dump-layout  # product: cursor-agents-home
+cargo run -p xai-grok-cursor-shell -- --tui          # legacy multipane TUI
 cargo test -p xai-grok-cursor-shell
 ```
 
-### Cursor shell (`grok-build-cursor-cli`)
+### Cursor Agents Home (`grok-build-cursor-cli`)
 
 Package: `crates/codegen/xai-grok-cursor-shell` · binary: `grok-build-cursor-cli`
 
-| Pane | Role |
-|------|------|
-| **Workspace** | File explorer + editor surface |
-| **Agent Chat** | Streaming transcript |
-| **Composer** | Primary prompt input (submits to Grok Build agent via ACP stdio) |
-| **Activity** | Tool steps / status |
-| **Diff Review** | Inspect proposed edits; accept (`a`) / reject (`r`) |
+Default surface is **Cursor Agents home** (sidebar + floating Composer), not a file-tree IDE:
 
-Composer submit drives `RealGrokAgentDriver` (`GROK_AGENT_BIN` / `xai-grok-pager` / `grok` → `agent stdio`). Diff review maps `xai-hunk-tracker` events and proposed edits.
+| Region | Role |
+|--------|------|
+| **New Agent** | Sidebar start (⌘N) |
+| **History** | Local past sessions |
+| **Floating Composer** | “Plan and design before coding…” |
+| **Plan / Model chips** | Plan mode prefix + model label |
+| **Session** | Transcript + activity + diff review after submit |
+
+Agent: `RealGrokAgentDriver` → `agent stdio`. Diffs: accept/reject on disk.
 
 The binary artifact is named `xai-grok-pager`; official installs ship it as
 `grok`. On first launch it opens your browser to authenticate — see the

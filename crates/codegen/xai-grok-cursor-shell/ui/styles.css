@@ -1,0 +1,278 @@
+:root {
+  --bg: #1e1e1e;
+  --bg-sidebar: #181818;
+  --bg-elevated: #2a2a2a;
+  --bg-composer: #2c2c2c;
+  --border: #333;
+  --text: #e8e8e8;
+  --text-muted: #8a8a8a;
+  --accent: #c7923e;
+  --accent-soft: rgba(199, 146, 62, 0.2);
+  --radius: 12px;
+  --sidebar-w: 240px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+.app {
+  display: flex;
+  height: 100vh;
+}
+
+/* —— Sidebar (Cursor agent rail) —— */
+.sidebar {
+  width: var(--sidebar-w);
+  min-width: var(--sidebar-w);
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 12px 10px;
+}
+.sidebar-top { display: flex; flex-direction: column; gap: 4px; }
+.btn-new-agent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn-new-agent kbd {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.btn-ghost {
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: default;
+}
+.sidebar-section { flex: 1; overflow: auto; margin-top: 16px; }
+.section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  padding: 4px 8px;
+}
+.group-title {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 8px 8px 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.history-list { list-style: none; margin: 0; padding: 0; }
+.history-list li {
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  color: var(--text);
+}
+.history-list li:hover { background: var(--bg-elevated); }
+.history-list li .meta { color: var(--text-muted); font-size: 11px; }
+.sidebar-footer {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.account { display: flex; gap: 10px; align-items: center; }
+.avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: #3a3a3a; display: grid; place-items: center;
+  font-size: 12px;
+}
+.account-name { font-size: 13px; }
+.account-plan { font-size: 11px; color: var(--text-muted); }
+
+/* —— Main / Home —— */
+.main {
+  flex: 1;
+  position: relative;
+  background: var(--bg);
+  min-width: 0;
+}
+.view-home {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.home-center {
+  width: min(600px, 90%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.project-context {
+  font-size: 13px;
+  color: var(--text-muted);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.project-context .sep { opacity: 0.5; }
+
+.composer-card {
+  width: 100%;
+  background: var(--bg-composer);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+}
+.composer-card textarea,
+.composer-dock textarea {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.composer-card textarea::placeholder { color: var(--text-muted); }
+.composer-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+}
+.toolbar-left { display: flex; gap: 6px; align-items: center; }
+.chip {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.chip-plan.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.btn-secondary {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tip {
+  position: absolute;
+  bottom: 16px;
+  left: 0; right: 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* —— Session —— */
+.hidden { display: none !important; }
+.view-session {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.session-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.transcript {
+  flex: 1;
+  overflow: auto;
+  padding: 24px 32px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.msg { margin-bottom: 16px; }
+.msg .role {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.msg.user .bubble {
+  background: var(--bg-elevated);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: inline-block;
+  max-width: 80%;
+}
+.session-side {
+  width: 280px;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.panel {
+  flex: 1;
+  overflow: auto;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.panel h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.panel ul { list-style: none; margin: 0; padding: 0; font-size: 12px; }
+.panel li { padding: 4px 0; border-bottom: 1px solid #2a2a2a; }
+.diff-inspect {
+  font-size: 11px;
+  color: #9cdcfe;
+  white-space: pre-wrap;
+  margin: 8px 0 0;
+  max-height: 120px;
+  overflow: auto;
+}
+.composer-dock {
+  border-top: 1px solid var(--border);
+  padding: 10px 16px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  background: var(--bg-sidebar);
+}
+.composer-dock button {
+  background: var(--accent);
+  color: #111;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}

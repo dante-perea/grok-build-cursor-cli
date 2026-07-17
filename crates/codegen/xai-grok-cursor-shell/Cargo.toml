@@ -13,6 +13,8 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+axum = { workspace = true, features = ["macros", "ws"] }
+chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true, features = ["derive", "env"] }
 crossterm = { workspace = true, features = ["event-stream", "bracketed-paste"] }
 ratatui = { workspace = true, features = ["crossterm"] }
@@ -29,8 +31,10 @@ tokio = { workspace = true, features = [
     "io-std",
     "process",
     "time",
+    "net",
 ] }
 tokio-util = { workspace = true }
+tower-http = { workspace = true, features = ["fs"] }
 uuid = { workspace = true, features = ["v4", "serde"] }
 # Real Grok Build hunk / accept-reject model (agent edit pipeline).
 xai-hunk-tracker = { path = "../xai-hunk-tracker" }
@@ -38,3 +42,5 @@ xai-hunk-tracker = { path = "../xai-hunk-tracker" }
 [dev-dependencies]
 tempfile = { workspace = true }
 serde_json = { workspace = true }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"

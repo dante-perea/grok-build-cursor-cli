@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Grok · Agents</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div id="app" class="app">
+    <aside class="sidebar" data-testid="sidebar">
+      <div class="sidebar-top">
+        <button type="button" class="btn-new-agent" data-testid="sidebar_new_agent" id="btn-new-agent">
+          <span class="icon">✈</span> New Agent
+          <kbd>⌘N</kbd>
+        </button>
+        <button type="button" class="btn-ghost" data-testid="automations" disabled>Automations</button>
+        <button type="button" class="btn-ghost" data-testid="customize" disabled>Customize</button>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-label" data-testid="repositories_label">Repositories</div>
+        <div class="history-group">
+          <div class="group-title" data-testid="history_group_home">Home</div>
+          <ul class="history-list" data-testid="sidebar_history" id="history-list"></ul>
+        </div>
+      </div>
+      <div class="sidebar-footer" data-testid="account_footer">
+        <div class="account">
+          <div class="avatar">G</div>
+          <div>
+            <div class="account-name">Grok Build</div>
+            <div class="account-plan">cursor-cli</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main" data-testid="main">
+      <!-- Agents Home -->
+      <section id="view-home" class="view-home" data-testid="view_home">
+        <div class="home-center">
+          <div class="project-context" data-testid="project_context">
+            <span id="ctx-project">workspace</span>
+            <span class="sep">▾</span>
+            <span id="ctx-branch">main</span>
+            <span class="sep">▾</span>
+            <span>Local</span>
+          </div>
+          <div class="composer-card" data-testid="floating_composer">
+            <textarea
+              id="composer-input"
+              data-testid="composer_input"
+              rows="2"
+              placeholder="Plan and design before coding…"
+            ></textarea>
+            <div class="composer-toolbar">
+              <div class="toolbar-left">
+                <button type="button" class="chip" data-testid="attach" title="Attach">+</button>
+                <button type="button" class="chip chip-plan active" data-testid="plan_chip" id="plan-chip">
+                  Plan
+                </button>
+                <button type="button" class="chip" data-testid="model_chip" id="model-chip">Grok ▾</button>
+              </div>
+              <button type="button" class="chip chip-mic" data-testid="mic" title="Voice" disabled>🎤</button>
+            </div>
+          </div>
+          <button type="button" class="btn-secondary" data-testid="submit_home" id="btn-submit-home">
+            Submit ↵
+          </button>
+        </div>
+        <footer class="tip" data-testid="tip">Drag and drop agent chats to split your view into tiled panes</footer>
+      </section>
+
+      <!-- Active session -->
+      <section id="view-session" class="view-session hidden" data-testid="view_session">
+        <div class="session-body">
+          <div class="transcript" data-testid="session_transcript" id="transcript"></div>
+          <aside class="session-side">
+            <div class="panel" data-testid="activity_feed">
+              <h3>Activity</h3>
+              <ul id="activity-list"></ul>
+            </div>
+            <div class="panel" data-testid="diff_review">
+              <h3>Diff Review</h3>
+              <ul id="diff-list"></ul>
+              <pre id="diff-inspect" class="diff-inspect"></pre>
+            </div>
+          </aside>
+        </div>
+        <div class="composer-dock" data-testid="composer_dock">
+          <textarea id="composer-input-session" rows="2" placeholder="Follow up…"></textarea>
+          <button type="button" id="btn-submit-session">Send</button>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>
