@@ -7,10 +7,13 @@
     <img alt="SpaceXAI logo" src="https://media.x.ai/v1/website/spacexai-symbol-black-transparent-6435cf42.png" width="96">
   </picture>
   <br>
-  Grok Build (<code>grok</code>)
+  Grok Build · Cursor CLI shell
 </h1>
 
-**Grok Build** is SpaceXAI's terminal-based AI coding agent. It runs as a
+**Fork:** [`dante-perea/grok-build-cursor-cli`](https://github.com/dante-perea/grok-build-cursor-cli)
+— Cursor-like multi-pane UX on top of the Grok Build agent runtime.
+
+Upstream **Grok Build** is SpaceXAI's terminal-based AI coding agent. It runs as a
 full-screen TUI that understands your codebase, edits files, executes shell
 commands, searches the web, and manages long-running tasks — interactively,
 headlessly for scripting/CI, or embedded in editors via the Agent Client
@@ -73,10 +76,29 @@ Requirements:
   and not currently tested from this tree.
 
 ```sh
-cargo run -p xai-grok-pager-bin              # build + launch the TUI
+cargo run -p xai-grok-pager-bin              # build + launch the stock TUI
 cargo build -p xai-grok-pager-bin --release  # release binary: target/release/xai-grok-pager
 cargo check -p xai-grok-pager-bin            # fast validation
+
+# Cursor-like multi-pane shell (this fork)
+cargo run -p xai-grok-cursor-shell           # interactive Workspace | Chat/Composer | Activity | Diff Review
+cargo run -p xai-grok-cursor-shell -- --dump-layout --prompt "smoke"
+cargo test -p xai-grok-cursor-shell
 ```
+
+### Cursor shell (`grok-build-cursor-cli`)
+
+Package: `crates/codegen/xai-grok-cursor-shell` · binary: `grok-build-cursor-cli`
+
+| Pane | Role |
+|------|------|
+| **Workspace** | File explorer + editor surface |
+| **Agent Chat** | Streaming transcript |
+| **Composer** | Primary prompt input (submits to Grok Build agent via ACP stdio) |
+| **Activity** | Tool steps / status |
+| **Diff Review** | Inspect proposed edits; accept (`a`) / reject (`r`) |
+
+Composer submit drives `RealGrokAgentDriver` (`GROK_AGENT_BIN` / `xai-grok-pager` / `grok` → `agent stdio`). Diff review maps `xai-hunk-tracker` events and proposed edits.
 
 The binary artifact is named `xai-grok-pager`; official installs ship it as
 `grok`. On first launch it opens your browser to authenticate — see the

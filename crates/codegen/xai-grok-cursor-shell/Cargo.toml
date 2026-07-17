@@ -1,0 +1,40 @@
+[package]
+name = "xai-grok-cursor-shell"
+version = "0.1.0"
+edition.workspace = true
+license = "Apache-2.0"
+authors = ["xAI", "dante-perea"]
+description = "Cursor-like multi-pane shell on top of the Grok Build agent runtime"
+default-run = "grok-build-cursor-cli"
+
+[[bin]]
+name = "grok-build-cursor-cli"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true, features = ["derive", "env"] }
+crossterm = { workspace = true, features = ["event-stream", "bracketed-paste"] }
+ratatui = { workspace = true, features = ["crossterm"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = [
+    "sync",
+    "rt",
+    "macros",
+    "rt-multi-thread",
+    "signal",
+    "io-util",
+    "io-std",
+    "process",
+    "time",
+] }
+tokio-util = { workspace = true }
+uuid = { workspace = true, features = ["v4", "serde"] }
+# Real Grok Build hunk / accept-reject model (agent edit pipeline).
+xai-hunk-tracker = { path = "../xai-hunk-tracker" }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+serde_json = { workspace = true }

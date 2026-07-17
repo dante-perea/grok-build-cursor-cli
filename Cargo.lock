@@ -13098,6 +13098,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "xai-grok-cursor-shell"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "crossterm",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "uuid",
+ "xai-hunk-tracker",
+]
+
+[[package]]
 name = "xai-grok-env"
 version = "0.1.0"
 dependencies = [
