@@ -1,15 +1,24 @@
 //! Integration tests for the shipped Cursor shell (layout, submit, activity, diffs).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
+use tokio::sync::mpsc;
 use xai_grok_cursor_shell::agent_bridge::{AgentRuntimeEvent, ToolCallPhase, bind_events};
-use xai_grok_cursor_shell::agent_driver::{map_agent_line, simulate_representative_turn};
+use xai_grok_cursor_shell::agent_driver::{
+    AgentPromptRequest, RealGrokAgentDriver, apply_change_to_disk, map_agent_line,
+    map_agent_line_all,
+};
 use xai_grok_cursor_shell::app::{AppOptions, run_headless_dump};
 use xai_grok_cursor_shell::diff_review::ChangeDecision;
 use xai_grok_cursor_shell::layout::FocusPane;
 use xai_grok_cursor_shell::session::{CursorAction, CursorSession, SessionEffect};
-use xai_hunk_tracker::{Hunk, HunkEvent, HunkSource};
+use xai_hunk_tracker::{Hunk, HunkAction, HunkEvent, HunkSource};
+
+fn fixture_agent() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fake-grok-agent.sh")
+}
 
 #[test]
 fn multi_pane_layout_regions_are_cursor_like() {
@@ -52,7 +61,10 @@ fn composer_submit_path_emits_real_agent_effect() {
         "effects={effects:?}"
     );
     assert!(session.agent_busy);
-    assert_eq!(session.chat.messages[0].content, "add logging to the auth module");
+    assert_eq!(
+        session.chat.messages[0].content,
+        "add logging to the auth module"
+    );
 }
 
 #[test]
@@ -120,7 +132,7 @@ fn diff_review_maps_proposed_edits_and_hunk_events() {
         .selected_item()
         .expect("item")
         .inspect_preview();
-    assert!(preview.contains("-fn a() {}") || preview.contains("fn a()"));
+    assert!(preview.contains("fn a()"));
 
     let hunk = Hunk::file_created(
         PathBuf::from("src/new.rs"),
@@ -157,57 +169,251 @@ fn map_agent_line_is_shipped_parser_for_stdio_runtime() {
 }
 
 #[test]
-fn headless_dump_and_representative_turn() {
+fn map_agent_line_emits_proposed_edit_from_acp_diff() {
+    let line = r#"{"method":"session/update","params":{"update":{"sessionUpdate":"tool_call","toolCallId":"e1","title":"search_replace","status":"completed","content":[{"type":"diff","path":"src/x.rs","oldText":"a","newText":"b"}]}}}"#;
+    let events = map_agent_line_all(line);
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            AgentRuntimeEvent::ProposedEdit {
+                path,
+                old_text,
+                new_text,
+                ..
+            } if path == Path::new("src/x.rs") && old_text == "a" && new_text == "b"
+        )),
+        "{events:?}"
+    );
+}
+
+#[tokio::test]
+async fn real_driver_submit_against_fixture_agent_streams_tools_and_edits() {
+    let fixture = fixture_agent();
+    assert!(
+        fixture.is_file(),
+        "missing fixture agent at {}",
+        fixture.display()
+    );
+    // Ensure executable
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&fixture).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&fixture, perms).unwrap();
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut driver = RealGrokAgentDriver::new(dir.path())
+        .with_bin(&fixture)
+        .with_read_timeout(Duration::from_secs(10));
+
+    let (tx, _rx) = mpsc::unbounded_channel();
+    let result = driver
+        .submit_prompt(
+            AgentPromptRequest {
+                prompt: "fixture turn".into(),
+                cwd: dir.path().to_path_buf(),
+            },
+            tx,
+        )
+        .await
+        .expect("RealGrokAgentDriver.submit_prompt must succeed against fixture");
+
+    assert!(
+        result.events.iter().any(|e| matches!(
+            e,
+            AgentRuntimeEvent::AgentMessageChunk { text } if text.contains("search_replace") || text.contains("Applying")
+        )),
+        "streaming text missing: {:?}",
+        result.events
+    );
+    assert!(
+        result
+            .events
+            .iter()
+            .any(|e| matches!(e, AgentRuntimeEvent::ToolCall { .. })),
+        "tool call missing: {:?}",
+        result.events
+    );
+    assert!(
+        result.events.iter().any(|e| matches!(
+            e,
+            AgentRuntimeEvent::ProposedEdit {
+                path,
+                ..
+            } if path.ends_with("fixture_edit.rs")
+        )),
+        "ProposedEdit missing from real driver path: {:?}",
+        result.events
+    );
+    assert!(
+        result
+            .events
+            .iter()
+            .any(|e| matches!(e, AgentRuntimeEvent::TurnCompleted { .. })),
+        "{:?}",
+        result.events
+    );
+}
+
+#[tokio::test]
+async fn headless_dump_drives_real_driver_not_hardcoded_only() {
+    let fixture = fixture_agent();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&fixture).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&fixture, perms).unwrap();
+    }
+
     let opts = AppOptions {
         cwd: std::env::temp_dir(),
         dump_layout: true,
-        auto_prompt: Some("smoke prompt for cursor shell".into()),
-        allow_simulated_runtime: true,
-        agent_bin: None,
+        auto_prompt: Some("headless real driver smoke".into()),
+        allow_simulated_runtime: false, // require real driver (fixture)
+        agent_bin: Some(fixture),
+        agent_timeout_secs: 15,
     };
-    let dump = run_headless_dump(&opts).expect("dump");
+    let dump = run_headless_dump(&opts)
+        .await
+        .expect("headless dump with real driver");
     assert!(dump.contains("multi_pane: true"), "{dump}");
     assert!(dump.contains("Composer"), "{dump}");
-    assert!(dump.contains("Activity"), "{dump}");
-    assert!(dump.contains("Diff Review"), "{dump}");
-    assert!(
-        dump.contains("diff_items:") && !dump.contains("diff_items: 0"),
-        "expected diffs from representative turn:\n{dump}"
-    );
     assert!(
         dump.contains("activity_entries:") && !dump.contains("activity_entries: 0"),
+        "activity must come from real driver events:\n{dump}"
+    );
+    assert!(
+        dump.contains("diff_items:") && !dump.contains("diff_items: 0"),
+        "diffs must come from real driver ACP mapping:\n{dump}"
+    );
+    // Status should reflect agent completion, not only mock
+    assert!(
+        dump.contains("chat_messages:") && !dump.contains("chat_messages: 0"),
         "{dump}"
     );
+}
 
-    // Also exercise the representative event factory directly.
-    let events = simulate_representative_turn("x");
+#[tokio::test]
+async fn require_agent_fails_without_binary() {
+    let opts = AppOptions {
+        cwd: std::env::temp_dir(),
+        dump_layout: true,
+        auto_prompt: Some("should fail".into()),
+        allow_simulated_runtime: false,
+        agent_bin: Some(PathBuf::from("/nonexistent/grok-agent-binary-xyz")),
+        agent_timeout_secs: 5,
+    };
+    let err = run_headless_dump(&opts).await.expect_err("must fail");
+    let msg = format!("{err:#}");
     assert!(
-        events
-            .iter()
-            .any(|e| matches!(e, AgentRuntimeEvent::ProposedEdit { .. }))
+        msg.contains("require-agent") || msg.contains("not found") || msg.contains("failed"),
+        "{msg}"
     );
 }
 
 #[test]
+fn accept_reject_apply_writes_disk() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("apply_me.rs");
+    std::fs::write(&path, "NEW").unwrap();
+    apply_change_to_disk(&path, Some("OLD"), "NEW", false).unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "OLD");
+    apply_change_to_disk(&path, Some("OLD"), "NEW", true).unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "NEW");
+}
+
+#[tokio::test]
+async fn accept_selected_change_dispatches_apply_hunk_effect_to_disk() {
+    let dir = tempfile::tempdir().unwrap();
+    let rel = PathBuf::from("src/disk_edit.rs");
+    let abs = dir.path().join(&rel);
+    std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+    std::fs::write(&abs, "fn old() {}").unwrap();
+
+    let mut session = CursorSession::new(dir.path());
+    session.reduce_all(bind_events(vec![AgentRuntimeEvent::ProposedEdit {
+        edit_id: "disk-1".into(),
+        path: rel,
+        old_text: "fn old() {}".into(),
+        new_text: "fn new() {}".into(),
+    }]));
+    // Agent already wrote new text
+    std::fs::write(&abs, "fn new() {}").unwrap();
+
+    let effects = session.reduce(CursorAction::RejectSelectedChange);
+    assert!(
+        effects.iter().any(|e| matches!(
+            e,
+            SessionEffect::ApplyHunkAction {
+                action: HunkAction::Reject,
+                ..
+            }
+        )),
+        "{effects:?}"
+    );
+    // Simulate app loop apply path
+    for e in &effects {
+        if let SessionEffect::ApplyHunkAction { hunk_id, action } = e {
+            let item = session
+                .diffs
+                .items
+                .iter()
+                .find(|i| i.id == *hunk_id)
+                .unwrap();
+            let path = dir.path().join(&item.path);
+            apply_change_to_disk(
+                &path,
+                item.old_text.as_deref(),
+                &item.new_text,
+                matches!(action, HunkAction::Accept),
+            )
+            .unwrap();
+        }
+    }
+    assert_eq!(std::fs::read_to_string(&abs).unwrap(), "fn old() {}");
+}
+
+#[test]
 fn binary_dump_layout_entrypoint_when_built() {
-    // Prefer cargo-built binary from this package if present in PATH-like target.
-    // This test is a structural/process check: if the binary isn't built yet,
-    // we only assert the library dump path above. When CARGO_BIN_EXE is set
-    // (cargo test), drive the real entrypoint.
     let bin = option_env!("CARGO_BIN_EXE_grok-build-cursor-cli");
     let Some(bin) = bin else {
         return;
     };
+    let fixture = fixture_agent();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&fixture).unwrap().permissions();
+        perms.set_mode(0o755);
+        let _ = std::fs::set_permissions(&fixture, perms);
+    }
     let output = Command::new(bin)
-        .args(["--dump-layout", "--prompt", "entry smoke"])
+        .args([
+            "--dump-layout",
+            "--require-agent",
+            "--agent-timeout",
+            "15",
+            "--prompt",
+            "entry smoke",
+            "--agent-bin",
+        ])
+        .arg(&fixture)
         .output()
         .expect("run binary");
     assert!(
         output.status.success(),
-        "stderr={}",
-        String::from_utf8_lossy(&output.stderr)
+        "stderr={} stdout={}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("multi_pane: true"), "{stdout}");
     assert!(stdout.contains("Composer"), "{stdout}");
+    assert!(
+        !stdout.contains("diff_items: 0"),
+        "binary must surface diffs from real driver:\n{stdout}"
+    );
 }

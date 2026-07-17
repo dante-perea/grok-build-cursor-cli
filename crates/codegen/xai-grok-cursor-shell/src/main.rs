@@ -29,9 +29,13 @@ struct Cli {
     #[arg(long, env = "GROK_AGENT_BIN")]
     agent_bin: Option<PathBuf>,
 
-    /// Disable representative event fallback when agent binary is missing.
+    /// Disable simulated fallback; require a real agent binary (hard error if missing).
     #[arg(long)]
     require_agent: bool,
+
+    /// Max seconds for headless agent turn (default 90).
+    #[arg(long, default_value = "90")]
+    agent_timeout: u64,
 }
 
 #[tokio::main]
@@ -49,10 +53,11 @@ async fn main() -> Result<()> {
         auto_prompt: cli.prompt,
         allow_simulated_runtime: !cli.require_agent,
         agent_bin: cli.agent_bin,
+        agent_timeout_secs: cli.agent_timeout,
     };
 
     if opts.dump_layout {
-        let dump = run_headless_dump(&opts)?;
+        let dump = run_headless_dump(&opts).await?;
         print!("{dump}");
         return Ok(());
     }

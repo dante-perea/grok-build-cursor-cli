@@ -20,7 +20,11 @@ pub mod workspace;
 
 pub use activity::{ActivityEntry, ActivityKind, ActivityStatus};
 pub use agent_bridge::{AgentRuntimeEvent, ToolCallPhase};
-pub use agent_driver::{AgentDriver, AgentPromptRequest, AgentPromptResult, RealGrokAgentDriver};
+pub use agent_driver::{
+    AgentDriver, AgentPromptRequest, AgentPromptResult, RealGrokAgentDriver, apply_change_to_disk,
+    map_agent_line, map_agent_line_all,
+};
+pub use app::{AppOptions, run_headless_dump, run_headless_dump_blocking};
 pub use chat::{ChatMessage, ChatRole, ChatTranscript};
 pub use composer::{ComposerOutcome, ComposerState};
 pub use diff_review::{ChangeDecision, ChangeItem, DiffReviewState};
