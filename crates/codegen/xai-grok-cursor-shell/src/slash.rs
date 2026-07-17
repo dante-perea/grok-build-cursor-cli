@@ -47,11 +47,28 @@ pub fn builtin_slash_commands() -> Vec<SlashCommandInfo> {
         cmd("theme", "Theme note (UI is web dark)", "/theme", true),
         cmd(
             "login",
-            "Auth: run `grok login` in a terminal",
+            "Sign in with Grok subscription (device code)",
             "/login",
             true,
         ),
-        cmd("logout", "Auth: run `grok logout` in a terminal", "/logout", true),
+        cmd(
+            "device",
+            "Sign in with device code (subscription)",
+            "/device",
+            true,
+        ),
+        cmd(
+            "whoami",
+            "Show Grok auth / subscription status",
+            "/whoami",
+            true,
+        ),
+        cmd(
+            "logout",
+            "Sign out: run `grok logout` in a terminal",
+            "/logout",
+            true,
+        ),
         cmd(
             "config",
             "Open config guidance",
@@ -236,11 +253,23 @@ pub fn exec_local_slash(name: &str, args: &str, ctx: &SlashExecCtx<'_>) -> Slash
             action: None,
             action_arg: None,
         },
-        "login" | "logout" => SlashExecResult {
+        "login" | "device" => SlashExecResult {
             handled: true,
-            message: Some(format!(
-                "Run `{name}` in a terminal with the `grok` CLI for full auth."
-            )),
+            message: Some("Starting Grok subscription device login…".into()),
+            action: Some("device_login".into()),
+            action_arg: None,
+        },
+        "whoami" => SlashExecResult {
+            handled: true,
+            message: Some("Checking Grok auth…".into()),
+            action: Some("whoami".into()),
+            action_arg: None,
+        },
+        "logout" => SlashExecResult {
+            handled: true,
+            message: Some(
+                "To sign out, run `grok logout` in a terminal, then refresh this page.".into(),
+            ),
             action: None,
             action_arg: None,
         },

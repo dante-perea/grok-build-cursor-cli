@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 # Minimal ACP-shaped agent for RealGrokAgentDriver tests.
-# Speaks newline JSON-RPC on stdio. Basename contains "fake-grok-agent"
-# so the driver does not append `agent stdio`.
+# Basename contains "fake-grok-agent" so the driver does not append `agent stdio`.
 set -euo pipefail
 
-# Drain all stdin (initialize / session/new / session/prompt).
-while IFS= read -r line || [[ -n "${line:-}" ]]; do
-  : # consume
-done
+# Drain stdin without hanging forever if the parent keeps the pipe open.
+# Read up to 20 lines with 0.5s timeout each (bash read -t).
+if [[ -n "${BASH_VERSION:-}" ]]; then
+  for _ in $(seq 1 20); do
+    IFS= read -r -t 0.5 line || break
+  done
+else
+  # Fallback: best-effort drain
+  cat >/dev/null 2>&1 || true
+fi
 
 # JSON-RPC responses (ids match driver handshake).
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"0.1.0","serverInfo":{"name":"fake-grok-agent","version":"0.0.1"},"capabilities":{}}}'

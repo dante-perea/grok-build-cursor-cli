@@ -10,6 +10,8 @@
     slashCommands: [],
     slashIndex: 0,
     slashFor: null, // which textarea
+    auth: { logged_in: false, needs_login: true, message: "" },
+    loginPollTimer: null,
   };
 
   const $ = (sel) => document.querySelector(sel);
@@ -175,6 +177,96 @@
     return "○";
   }
 
+  function applyAuth(auth) {
+    if (!auth) return;
+    state.auth = auth;
+    const banner = $("#auth-banner");
+    const title = $("#auth-title");
+    const msg = $("#auth-message");
+    const btn = $("#btn-signin");
+    if (!banner) return;
+    if (auth.logged_in) {
+      banner.classList.add("hidden");
+      // Show subtle status in footer tip
+      const tip = document.querySelector(".tip");
+      if (tip) {
+        tip.textContent = auth.message || "Signed in to Grok";
+      }
+      stopLoginPoll();
+    } else {
+      banner.classList.remove("hidden");
+      if (title) title.textContent = "Grok subscription required";
+      if (msg) msg.textContent = auth.message || "Sign in with device code.";
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function startLoginPoll() {
+    stopLoginPoll();
+    state.loginPollTimer = setInterval(() => {
+      fetch("/api/auth/poll")
+        .then((r) => r.json())
+        .then((p) => {
+          if (p.auth) applyAuth(p.auth);
+          if (p.login_message) {
+            const msg = $("#auth-message");
+            if (msg) msg.textContent = p.login_message;
+          }
+          if (p.login_success || (p.auth && p.auth.logged_in)) {
+            stopLoginPoll();
+            fetch("/api/snapshot")
+              .then((r) => r.json())
+              .then(applySnapshot)
+              .catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }, 2500);
+  }
+
+  function stopLoginPoll() {
+    if (state.loginPollTimer) {
+      clearInterval(state.loginPollTimer);
+      state.loginPollTimer = null;
+    }
+  }
+
+  function startDeviceLogin() {
+    const btn = $("#btn-signin");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Starting login…";
+    }
+    fetch("/api/auth/login", { method: "POST" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.auth) applyAuth(data.auth);
+        if (data.login && data.login.message) {
+          const msg = $("#auth-message");
+          if (msg) msg.textContent = data.login.message;
+          // Also show in session chat area via snapshot refresh
+        }
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "Sign in with Grok (/device)";
+        }
+        if (!data.auth || !data.auth.logged_in) {
+          startLoginPoll();
+        }
+        fetch("/api/snapshot")
+          .then((r) => r.json())
+          .then(applySnapshot)
+          .catch(() => {});
+      })
+      .catch((e) => {
+        console.error(e);
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "Sign in with Grok (/device)";
+        }
+      });
+  }
+
   function applySnapshot(snap) {
     if (snap.view) setView(snap.view);
     if (snap.history) renderHistory(snap.history);
@@ -199,6 +291,7 @@
     if (Array.isArray(snap.slash_commands)) {
       state.slashCommands = snap.slash_commands;
     }
+    if (snap.auth) applyAuth(snap.auth);
   }
 
   function escapeHtml(s) {
@@ -482,6 +575,10 @@
   modeChip.addEventListener("click", () => send({ type: "cycle_mode" }));
   if (modeChipSession)
     modeChipSession.addEventListener("click", () => send({ type: "cycle_mode" }));
+
+  if ($("#btn-signin")) {
+    $("#btn-signin").addEventListener("click", startDeviceLogin);
+  }
 
   $("#btn-new-agent").addEventListener("click", () => {
     send({ type: "new_agent" });

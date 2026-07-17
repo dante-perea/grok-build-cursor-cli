@@ -40,6 +40,17 @@
     </aside>
 
     <main class="main" data-testid="main">
+      <div id="auth-banner" class="auth-banner hidden" data-testid="auth_banner">
+        <div class="auth-banner-inner">
+          <div>
+            <strong id="auth-title">Grok subscription required</strong>
+            <p id="auth-message">Sign in with device code to use your Grok subscription.</p>
+          </div>
+          <button type="button" class="btn-signin" id="btn-signin" data-testid="btn_signin">
+            Sign in with Grok (/device)
+          </button>
+        </div>
+      </div>
       <section id="view-home" class="view-home" data-testid="view_home">
         <div class="home-center">
           <div class="project-context" data-testid="project_context">

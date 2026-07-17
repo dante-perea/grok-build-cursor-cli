@@ -20,6 +20,9 @@ use crate::agent_bridge::{AgentRuntimeEvent, bind_events};
 use crate::agent_driver::{
     AgentPromptRequest, RealGrokAgentDriver, apply_change_to_disk, simulate_representative_turn,
 };
+use crate::auth::{
+    AuthStatus, looks_like_auth_error, poll_login, read_auth_status, start_device_login,
+};
 use crate::diff_review::ChangeDecision;
 use crate::history::{AgentHistoryStore, SessionMeta};
 use crate::layout_home::{AgentsView, HomeLayoutSnapshot};
@@ -104,6 +107,7 @@ pub struct UiSnapshot {
     pub attachments: Vec<String>,
     pub projects: Vec<ProjectEntry>,
     pub slash_commands: Vec<SlashCommandInfo>,
+    pub auth: AuthStatus,
 }
 
 #[derive(Debug, Serialize)]
@@ -143,6 +147,9 @@ pub fn build_router(state: SharedState, ui_dir: PathBuf) -> Router {
         .route("/api/attach", post(api_attach))
         .route("/api/attach/clear", post(api_attach_clear))
         .route("/api/slash", get(api_slash))
+        .route("/api/auth", get(api_auth))
+        .route("/api/auth/login", post(api_auth_login))
+        .route("/api/auth/poll", get(api_auth_poll))
         .route("/api/diff/{id}/accept", post(api_diff_accept))
         .route("/api/diff/{id}/reject", post(api_diff_reject))
         .route("/ws", get(ws_handler))
@@ -275,6 +282,22 @@ async fn api_slash(
 ) -> impl IntoResponse {
     let cmds = filter_slash_commands(&q.q);
     Json(serde_json::json!({ "commands": cmds }))
+}
+
+async fn api_auth() -> impl IntoResponse {
+    Json(read_auth_status())
+}
+
+async fn api_auth_login() -> impl IntoResponse {
+    let result = start_device_login();
+    Json(serde_json::json!({
+        "login": result,
+        "auth": read_auth_status(),
+    }))
+}
+
+async fn api_auth_poll() -> impl IntoResponse {
+    Json(poll_login())
 }
 
 async fn api_diff_accept(
@@ -449,6 +472,22 @@ async fn handle_submit(
         }
     }
 
+    // Gate freeform agent turns on Grok subscription auth.
+    let auth = read_auth_status();
+    if !auth.logged_in {
+        let mut g = state.lock().await;
+        g.session.view = AgentsView::Session;
+        g.session.chat.push_system(format!(
+            "{}\n\nClick **Sign in with Grok** or type `/device` to authenticate with your subscription (device code).",
+            auth.message
+        ));
+        let snap = build_snapshot(&g);
+        let _ = g
+            .tx
+            .send(serde_json::to_string(&snap).unwrap_or_default());
+        return snap;
+    }
+
     let (effects, cwd, opts) = {
         let mut g = state.lock().await;
         if let Some(m) = mode.as_deref().and_then(parse_mode) {
@@ -481,9 +520,32 @@ async fn handle_submit(
                 let _ = g.history.add(meta);
             }
             SessionEffect::SubmitToAgent { prompt } => {
+                // Re-check auth right before spawn (token may have expired mid-session).
+                if !read_auth_status().logged_in {
+                    let mut g = state.lock().await;
+                    g.session.chat.push_system(
+                        "Grok session expired. Type /device to sign in again with your subscription."
+                            .to_string(),
+                    );
+                    g.session.agent_busy = false;
+                    g.session.composer.set_turn_in_flight(false);
+                    continue;
+                }
                 let events = drive_agent(&opts, &cwd, prompt).await;
                 let mut g = state.lock().await;
+                // If agent failed with auth errors, surface login prompt.
+                let auth_fail = events.iter().any(|e| match e {
+                    AgentRuntimeEvent::Error { message } => looks_like_auth_error(message),
+                    AgentRuntimeEvent::Status { message } => looks_like_auth_error(message),
+                    _ => false,
+                });
                 g.session.reduce_all(bind_events(events));
+                if auth_fail || !read_auth_status().logged_in {
+                    g.session.chat.push_system(
+                        "Authentication failed or expired. Type `/device` (or click Sign in) to re-authenticate with your Grok subscription."
+                            .to_string(),
+                    );
+                }
             }
             SessionEffect::ApplyHunkAction { hunk_id, action } => {
                 let mut g = state.lock().await;
@@ -529,7 +591,11 @@ async fn try_handle_local_slash(
     let mut g = state.lock().await;
     g.session.view = AgentsView::Session;
     if let Some(msg) = &result.message {
-        if result.action.as_deref() != Some("list_projects") {
+        let skip = matches!(
+            result.action.as_deref(),
+            Some("list_projects" | "device_login" | "whoami")
+        );
+        if !skip {
             g.session.chat.push_system(msg.clone());
         }
     }
@@ -587,6 +653,22 @@ async fn try_handle_local_slash(
             g.session
                 .chat
                 .push_system(format!("Projects:\n{lines}\n\nUse /cd <name> or the project picker."));
+        }
+        Some("device_login") => {
+            drop(g);
+            let result = start_device_login();
+            let mut g = state.lock().await;
+            g.session.view = AgentsView::Session;
+            g.session.chat.push_system(result.message);
+            let snap = build_snapshot(&g);
+            let _ = g
+                .tx
+                .send(serde_json::to_string(&snap).unwrap_or_default());
+            return Some(snap);
+        }
+        Some("whoami") => {
+            let auth = read_auth_status();
+            g.session.chat.push_system(auth.message);
         }
         _ => {}
     }
@@ -787,6 +869,7 @@ pub fn build_snapshot(g: &AppStateInner) -> UiSnapshot {
             .collect(),
         projects,
         slash_commands: builtin_slash_commands(),
+        auth: read_auth_status(),
     }
 }
 

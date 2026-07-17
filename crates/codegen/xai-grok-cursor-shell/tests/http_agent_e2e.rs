@@ -164,6 +164,30 @@ async fn prompt_drives_real_fixture_agent() {
 }
 
 #[tokio::test]
+async fn auth_status_endpoint() {
+    let tmp = tempfile::tempdir().unwrap();
+    let state = test_state(&tmp, false);
+    let app = build_router(state, default_ui_dir());
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/auth")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let v = body_json(res).await;
+    // Must never leak tokens
+    let s = v.to_string();
+    assert!(!s.contains("refresh_token"));
+    assert!(v.get("logged_in").is_some());
+    assert!(v.get("needs_login").is_some());
+    assert!(v.get("message").is_some());
+}
+
+#[tokio::test]
 async fn slash_usage_is_local() {
     let tmp = tempfile::tempdir().unwrap();
     let state = test_state(&tmp, false);

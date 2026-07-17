@@ -8,6 +8,7 @@ pub mod activity;
 pub mod agent_bridge;
 pub mod agent_driver;
 pub mod app;
+pub mod auth;
 pub mod chat;
 pub mod composer;
 pub mod diff_review;
@@ -22,6 +23,7 @@ pub mod slash;
 pub mod workspace;
 
 pub use activity::{ActivityEntry, ActivityKind, ActivityStatus};
+pub use auth::{AuthStatus, read_auth_status, start_device_login};
 pub use agent_bridge::{AgentRuntimeEvent, ToolCallPhase};
 pub use agent_driver::{
     AgentDriver, AgentPromptRequest, AgentPromptResult, RealGrokAgentDriver, apply_change_to_disk,
