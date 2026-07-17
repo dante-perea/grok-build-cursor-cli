@@ -38,6 +38,7 @@ fn test_state(tmp: &tempfile::TempDir, require_agent: bool) -> Arc<Mutex<AppStat
         allow_simulated_runtime: !require_agent,
         agent_timeout_secs: 15,
         history_path: tmp.path().join("sessions.json"),
+        project_roots: vec![tmp.path().to_path_buf()],
     };
     Arc::new(Mutex::new(AppStateInner {
         session: CursorSession::new(tmp.path()),
@@ -159,6 +160,124 @@ async fn prompt_drives_real_fixture_agent() {
             .map(|a| !a.is_empty())
             .unwrap_or(false),
         "history: {v}"
+    );
+}
+
+#[tokio::test]
+async fn slash_usage_is_local() {
+    let tmp = tempfile::tempdir().unwrap();
+    let state = test_state(&tmp, false);
+    let app = build_router(state, default_ui_dir());
+    let body = serde_json::json!({ "prompt": "/usage" });
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/prompt")
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let v = body_json(res).await;
+    let chat = v["chat"].as_array().cloned().unwrap_or_default();
+    assert!(
+        chat.iter().any(|m| m["content"]
+            .as_str()
+            .map(|c| c.contains("Usage") || c.contains("Workspace"))
+            .unwrap_or(false)),
+        "expected /usage system reply: {v}"
+    );
+}
+
+#[tokio::test]
+async fn slash_autocomplete_endpoint() {
+    let tmp = tempfile::tempdir().unwrap();
+    let state = test_state(&tmp, false);
+    let app = build_router(state, default_ui_dir());
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/slash?q=us")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let v = body_json(res).await;
+    let cmds = v["commands"].as_array().cloned().unwrap_or_default();
+    assert!(
+        cmds.iter()
+            .any(|c| c["name"].as_str() == Some("usage")),
+        "{v}"
+    );
+}
+
+#[tokio::test]
+async fn cycle_mode_and_projects() {
+    let tmp = tempfile::tempdir().unwrap();
+    let proj = tmp.path().join("demo-proj");
+    std::fs::create_dir(&proj).unwrap();
+    let state = test_state(&tmp, false);
+    let app = build_router(state, default_ui_dir());
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/mode/cycle")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let v = body_json(res).await;
+    assert_eq!(v["agent_mode"], "plan");
+    assert_eq!(v["plan_mode"], true);
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/projects")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let v = body_json(res).await;
+    assert!(
+        v["projects"]
+            .as_array()
+            .map(|a| a.iter().any(|p| p["name"] == "demo-proj"))
+            .unwrap_or(false),
+        "{v}"
+    );
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/project")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "path": "demo-proj" }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let v = body_json(res).await;
+    assert!(
+        v["workspace"]
+            .as_str()
+            .map(|w| w.contains("demo-proj"))
+            .unwrap_or(false),
+        "{v}"
     );
 }
 

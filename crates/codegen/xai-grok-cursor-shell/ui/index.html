@@ -20,8 +20,12 @@
       <div class="sidebar-section">
         <div class="section-label" data-testid="repositories_label">Repositories</div>
         <div class="history-group">
-          <div class="group-title" data-testid="history_group_home">Home</div>
+          <div class="group-title" data-testid="history_group_home">Sessions</div>
           <ul class="history-list" data-testid="sidebar_history" id="history-list"></ul>
+        </div>
+        <div class="history-group">
+          <div class="group-title">Projects</div>
+          <ul class="history-list projects-list" data-testid="projects_list" id="projects-list"></ul>
         </div>
       </div>
       <div class="sidebar-footer" data-testid="account_footer">
@@ -36,28 +40,33 @@
     </aside>
 
     <main class="main" data-testid="main">
-      <!-- Agents Home -->
       <section id="view-home" class="view-home" data-testid="view_home">
         <div class="home-center">
           <div class="project-context" data-testid="project_context">
-            <span id="ctx-project">workspace</span>
-            <span class="sep">▾</span>
+            <button type="button" class="ctx-btn" id="ctx-project" data-testid="project_picker_btn" title="Choose project">workspace ▾</button>
+            <span class="sep">·</span>
             <span id="ctx-branch">main</span>
-            <span class="sep">▾</span>
+            <span class="sep">·</span>
             <span>Local</span>
           </div>
           <div class="composer-card" data-testid="floating_composer">
-            <textarea
-              id="composer-input"
-              data-testid="composer_input"
-              rows="2"
-              placeholder="Plan and design before coding…"
-            ></textarea>
+            <div class="attach-chips" id="attach-chips" data-testid="attach_chips"></div>
+            <div class="composer-wrap">
+              <textarea
+                id="composer-input"
+                data-testid="composer_input"
+                rows="2"
+                placeholder="Plan, search, build anything…  (type / for commands)"
+                autocomplete="off"
+              ></textarea>
+              <ul class="slash-menu hidden" id="slash-menu" data-testid="slash_menu"></ul>
+            </div>
             <div class="composer-toolbar">
               <div class="toolbar-left">
-                <button type="button" class="chip" data-testid="attach" title="Attach">+</button>
-                <button type="button" class="chip chip-plan active" data-testid="plan_chip" id="plan-chip">
-                  Plan
+                <button type="button" class="chip" data-testid="attach" id="btn-attach" title="Add file">+</button>
+                <input type="file" id="file-input" class="hidden" multiple />
+                <button type="button" class="chip chip-mode" data-testid="mode_chip" id="mode-chip" title="Click to cycle: Agent → Plan → Always">
+                  Agent
                 </button>
                 <button type="button" class="chip" data-testid="model_chip" id="model-chip">Grok ▾</button>
               </div>
@@ -67,11 +76,23 @@
           <button type="button" class="btn-secondary" data-testid="submit_home" id="btn-submit-home">
             Submit ↵
           </button>
+          <p class="hint">Modes: <kbd>Agent</kbd> · <kbd>Plan</kbd> · <kbd>Always</kbd> (click mode chip). Slash: <kbd>/usage</kbd> <kbd>/help</kbd> <kbd>/projects</kbd> <kbd>/cd</kbd></p>
         </div>
-        <footer class="tip" data-testid="tip">Drag and drop agent chats to split your view into tiled panes</footer>
+        <footer class="tip" data-testid="tip">Type / for Grok-style slash commands · + to attach files · pick a project above</footer>
       </section>
 
-      <!-- Active session -->
+      <!-- Project picker modal -->
+      <div id="project-modal" class="modal hidden" data-testid="project_modal">
+        <div class="modal-card">
+          <header>
+            <h2>Choose project</h2>
+            <button type="button" id="project-modal-close">✕</button>
+          </header>
+          <input type="search" id="project-search" placeholder="Filter projects…" />
+          <ul id="project-modal-list" class="modal-list"></ul>
+        </div>
+      </div>
+
       <section id="view-session" class="view-session hidden" data-testid="view_session">
         <div class="session-body">
           <div class="transcript" data-testid="session_transcript" id="transcript"></div>
@@ -88,8 +109,14 @@
           </aside>
         </div>
         <div class="composer-dock" data-testid="composer_dock">
-          <textarea id="composer-input-session" rows="2" placeholder="Follow up…"></textarea>
-          <button type="button" id="btn-submit-session">Send</button>
+          <div class="attach-chips" id="attach-chips-session"></div>
+          <div class="dock-row">
+            <button type="button" class="chip" id="btn-attach-session">+</button>
+            <button type="button" class="chip chip-mode" id="mode-chip-session">Agent</button>
+            <textarea id="composer-input-session" rows="2" placeholder="Follow up… or /command"></textarea>
+            <button type="button" id="btn-submit-session">Send</button>
+          </div>
+          <ul class="slash-menu slash-menu-dock hidden" id="slash-menu-session"></ul>
         </div>
       </section>
     </main>

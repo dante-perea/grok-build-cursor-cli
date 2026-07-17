@@ -12,6 +12,41 @@ use crate::layout::{CursorLayout, FocusPane, LayoutSnapshot};
 use crate::layout_home::{AgentsView, HomeLayoutSnapshot};
 use crate::workspace::WorkspacePane;
 
+/// Composer interaction mode (Grok Build Shift+Tab cycle: Normal / Plan / Always-approve).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentMode {
+    /// Normal agent — tools + edits allowed.
+    #[default]
+    Agent,
+    /// Plan mode — planning first (prompt prefixed).
+    Plan,
+    /// Always-approve style (auto-approve tools when agent supports it).
+    AlwaysApprove,
+}
+
+impl AgentMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            AgentMode::Agent => "Agent",
+            AgentMode::Plan => "Plan",
+            AgentMode::AlwaysApprove => "Always",
+        }
+    }
+
+    pub fn cycle(self) -> Self {
+        match self {
+            AgentMode::Agent => AgentMode::Plan,
+            AgentMode::Plan => AgentMode::AlwaysApprove,
+            AgentMode::AlwaysApprove => AgentMode::Agent,
+        }
+    }
+
+    pub fn is_plan(self) -> bool {
+        matches!(self, AgentMode::Plan)
+    }
+}
+
 /// Side effects requested by the session reducer (executed by the app / driver).
 #[derive(Debug, Clone)]
 pub enum SessionEffect {
@@ -73,8 +108,19 @@ pub enum CursorAction {
     /// Toggle Plan mode chip (Cursor Agents home).
     SetPlanMode(bool),
     TogglePlanMode,
+    /// Set / cycle Agent | Plan | Always modes.
+    SetAgentMode(AgentMode),
+    CycleAgentMode,
+    SetModelLabel(String),
+    /// Attach a file path for the next prompt.
+    AttachFile { path: PathBuf },
+    ClearAttachments,
+    RemoveAttachment { path: PathBuf },
+    /// Switch workspace root (project picker).
+    SetWorkspace(PathBuf),
     /// Return to Agents Home empty canvas.
     NewAgent,
+    ClearTranscript,
     Quit,
 }
 
@@ -91,10 +137,14 @@ pub struct CursorSession {
     pub agent_busy: bool,
     /// Agents Home vs active session transcript.
     pub view: AgentsView,
-    /// Plan mode chip (prefixes prompt when submitting).
+    /// Plan mode chip (prefixes prompt when submitting). Kept in sync with `agent_mode`.
     pub plan_mode: bool,
+    /// Agent | Plan | Always (Shift+Tab style).
+    pub agent_mode: AgentMode,
     /// Display model label (static for v1).
     pub model_label: String,
+    /// Files attached for the next submit.
+    pub attachments: Vec<PathBuf>,
 }
 
 impl CursorSession {
@@ -114,8 +164,10 @@ impl CursorSession {
             status_line: format!("grok-build-cursor-cli · {}", root.display()),
             agent_busy: false,
             view: AgentsView::Home,
-            plan_mode: true,
+            plan_mode: false,
+            agent_mode: AgentMode::Agent,
             model_label: "Grok".into(),
+            attachments: Vec::new(),
         }
     }
 
@@ -148,15 +200,63 @@ impl CursorSession {
             }
             CursorAction::SetPlanMode(v) => {
                 self.plan_mode = v;
+                self.agent_mode = if v {
+                    AgentMode::Plan
+                } else if self.agent_mode.is_plan() {
+                    AgentMode::Agent
+                } else {
+                    self.agent_mode
+                };
             }
             CursorAction::TogglePlanMode => {
-                self.plan_mode = !self.plan_mode;
+                if self.agent_mode.is_plan() {
+                    self.agent_mode = AgentMode::Agent;
+                    self.plan_mode = false;
+                } else {
+                    self.agent_mode = AgentMode::Plan;
+                    self.plan_mode = true;
+                }
+            }
+            CursorAction::SetAgentMode(m) => {
+                self.agent_mode = m;
+                self.plan_mode = m.is_plan();
+            }
+            CursorAction::CycleAgentMode => {
+                self.agent_mode = self.agent_mode.cycle();
+                self.plan_mode = self.agent_mode.is_plan();
+            }
+            CursorAction::SetModelLabel(s) => {
+                if !s.trim().is_empty() {
+                    self.model_label = s.trim().to_string();
+                }
+            }
+            CursorAction::AttachFile { path } => {
+                if !self.attachments.iter().any(|p| p == &path) {
+                    self.attachments.push(path);
+                }
+            }
+            CursorAction::ClearAttachments => {
+                self.attachments.clear();
+            }
+            CursorAction::RemoveAttachment { path } => {
+                self.attachments.retain(|p| p != &path);
+            }
+            CursorAction::SetWorkspace(root) => {
+                let mut workspace = WorkspacePane::new(root.clone());
+                let _ = workspace.refresh_listing();
+                self.workspace = workspace;
+                self.status_line = format!("Project · {}", root.display());
+            }
+            CursorAction::ClearTranscript => {
+                self.chat = ChatTranscript::new();
+                self.activity = ActivityFeed::new();
             }
             CursorAction::NewAgent => {
                 self.view = AgentsView::Home;
                 self.chat = ChatTranscript::new();
                 self.activity = ActivityFeed::new();
                 self.diffs = DiffReviewState::new();
+                self.attachments.clear();
                 self.agent_busy = false;
                 self.composer.set_turn_in_flight(false);
                 let _ = self.composer.clear();
@@ -166,19 +266,42 @@ impl CursorSession {
                 match self.composer.submit() {
                     ComposerOutcome::Submit { prompt } => {
                         let title = prompt.clone();
-                        let agent_prompt = if self.plan_mode {
-                            format!("[plan mode] {prompt}")
-                        } else {
+                        let mut agent_prompt = match self.agent_mode {
+                            AgentMode::Plan => format!("[plan mode] {prompt}"),
+                            AgentMode::AlwaysApprove => {
+                                format!("[always-approve] {prompt}")
+                            }
+                            AgentMode::Agent => prompt.clone(),
+                        };
+                        if !self.attachments.is_empty() {
+                            let list = self
+                                .attachments
+                                .iter()
+                                .map(|p| format!("- {}", p.display()))
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            agent_prompt = format!(
+                                "{agent_prompt}\n\nAttached files:\n{list}"
+                            );
+                        }
+                        let display = if self.attachments.is_empty() {
                             prompt.clone()
+                        } else {
+                            format!(
+                                "{prompt}\n\n(attached {} file{})",
+                                self.attachments.len(),
+                                if self.attachments.len() == 1 { "" } else { "s" }
+                            )
                         };
                         self.view = AgentsView::Session;
-                        self.chat.push_user(&prompt);
+                        self.chat.push_user(&display);
                         self.activity
                             .push_status("Submitting to Grok Build agent…");
                         self.chat.begin_assistant_stream();
                         self.agent_busy = true;
                         self.composer.set_turn_in_flight(true);
                         self.status_line = "Agent turn in progress…".into();
+                        self.attachments.clear();
                         effects.push(SessionEffect::RecordHistory { title });
                         effects.push(SessionEffect::SubmitToAgent {
                             prompt: agent_prompt,
@@ -293,6 +416,7 @@ mod tests {
     use super::*;
     use crate::agent_bridge::{AgentRuntimeEvent, ToolCallPhase, bind_events};
     use crate::layout_home::AgentsView;
+    use crate::session::AgentMode;
     use std::env;
 
     #[test]
@@ -324,7 +448,7 @@ mod tests {
     #[test]
     fn plan_mode_prefixes_agent_prompt() {
         let mut session = CursorSession::new(env::temp_dir());
-        session.plan_mode = true;
+        session.reduce(CursorAction::SetAgentMode(AgentMode::Plan));
         session.reduce(CursorAction::ComposerInsertStr("design auth".into()));
         let effects = session.reduce(CursorAction::ComposerSubmit);
         assert!(
@@ -334,6 +458,39 @@ mod tests {
             )),
             "{effects:?}"
         );
+    }
+
+    #[test]
+    fn cycle_modes_agent_plan_always() {
+        let mut session = CursorSession::new(env::temp_dir());
+        assert_eq!(session.agent_mode, AgentMode::Agent);
+        session.reduce(CursorAction::CycleAgentMode);
+        assert_eq!(session.agent_mode, AgentMode::Plan);
+        assert!(session.plan_mode);
+        session.reduce(CursorAction::CycleAgentMode);
+        assert_eq!(session.agent_mode, AgentMode::AlwaysApprove);
+        session.reduce(CursorAction::CycleAgentMode);
+        assert_eq!(session.agent_mode, AgentMode::Agent);
+    }
+
+    #[test]
+    fn attachments_included_on_submit() {
+        let mut session = CursorSession::new(env::temp_dir());
+        session.plan_mode = false;
+        session.agent_mode = AgentMode::Agent;
+        session.reduce(CursorAction::AttachFile {
+            path: PathBuf::from("/tmp/a.rs"),
+        });
+        session.reduce(CursorAction::ComposerInsertStr("review this".into()));
+        let effects = session.reduce(CursorAction::ComposerSubmit);
+        assert!(
+            effects.iter().any(|e| matches!(
+                e,
+                SessionEffect::SubmitToAgent { prompt } if prompt.contains("Attached files:") && prompt.contains("a.rs")
+            )),
+            "{effects:?}"
+        );
+        assert!(session.attachments.is_empty());
     }
 
     #[test]

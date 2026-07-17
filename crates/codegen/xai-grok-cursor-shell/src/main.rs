@@ -9,6 +9,7 @@ use clap::Parser;
 use xai_grok_cursor_shell::app::{AppOptions, run_headless_dump, run_interactive};
 use xai_grok_cursor_shell::history::AgentHistoryStore;
 use xai_grok_cursor_shell::layout_home::HomeLayoutSnapshot;
+use xai_grok_cursor_shell::projects::default_project_roots;
 use xai_grok_cursor_shell::server::{ServerOptions, default_ui_dir, run_server};
 
 #[derive(Debug, Parser)]
@@ -122,6 +123,7 @@ async fn main() -> Result<()> {
         allow_simulated_runtime: !cli.require_agent,
         agent_timeout_secs: cli.agent_timeout,
         history_path,
+        project_roots: default_project_roots(),
     };
 
     let url = format!("http://{addr}");
